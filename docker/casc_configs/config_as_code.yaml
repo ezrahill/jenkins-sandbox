@@ -1,3 +1,13 @@
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: slack-token
+              secret: '${SLACK_TOKEN}'
+              description: Slack token
+
 jenkins:
   securityRealm:
     local:
@@ -22,3 +32,6 @@ security:
 unclassified:
   location:
     url: http://127.0.0.1:8080/
+  slackNotifier:
+    teamDomain: thehackshop
+    tokenCredentialId: slack-token

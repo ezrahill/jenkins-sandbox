@@ -6,6 +6,7 @@ services:
     environment:
       - JENKINS_ADMIN_USER=${JENKINS_ADMIN_USER}
       - JENKINS_ADMIN_PASS=${JENKINS_ADMIN_PASS}
+      - SLACK_TOKEN=${SLACK_TOKEN}
     ports:
       - 8080:8080
       - 50000:50000
