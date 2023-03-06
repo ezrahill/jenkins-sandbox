@@ -1,33 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
-# Description of what this CloudFormation Template is going to produce
 Description: AWS CloudFormation Jenkins Template to create a Stand Alone Jenkins server stack using a single EC2 instance
-# Define Parameter Variables that will be used throughout this Cloudformation template.
 Parameters:
-  InstanceType:
-    Description: Type of EC2 instance to launch for the server. Only Compute type nodes are currently specified.
-    Type: String
-    Default: t2.micro
-    ConstraintDescription: Must be a valid EC2 instance type
-    AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - m4.4xlarge
-      - m4.10xlarge
-      - m4.16xlarge
-      - m5.large
-      - m5.xlarge
-      - m5.2xlarge
-      - m5.4xlarge
-      - m5.12xlarge
-      - m5.24xlarge
   VpcId:
     Description: VPC ID that this stack will be launched in.
     Type: AWS::EC2::VPC::Id
@@ -36,10 +9,6 @@ Parameters:
     Description: VPC Subnet that this stack will be launched in.
     Type: AWS::EC2::Subnet::Id
     AllowedPattern: "[a-z0-9-]*"
-  KeyName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance(s).
-    Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: Must be the name of an existing EC2 KeyPair
   SSHLocation:
     Description: The source IP address (/32) or source IP address range (x.x.x.x/x) that will be allowed to SSH to the EC2 instances
     Type: String
@@ -58,25 +27,16 @@ Parameters:
     Description: Instance Name tag that will be used to define the Name of the instance resource(s)
     Type: String
     Default: Jenkins
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64'
 
-# Create an easy mapping, simply mapping the region selected to the appropriate Amazon Linux 2 AMI
-# AMI ID's Updated 8/20/18
-Mappings:
-  RegionMap:
-    'eu-west-2':
-      AMI: 'ami-03e88be9ecff64781'
-    'us-east-1':
-      AMI: 'ami-04681a1dbd79675a5'
-    'us-east-2':
-      AMI: 'ami-0cf31d971a3ca20d6'
-    'us-west-1':
-      AMI: 'ami-0782017a917e973e7'
-    'us-west-2':
-      AMI: 'ami-6cd6f714'
-
-# Define Resources that will be launched via this template
 Resources:
-  # EC2 Server Instance Definition
+  JenkinsKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties: 
+      KeyName: Jenkins
+
   JenkinsInstance:
     Description: Jenkins Standalone EC2 Instance running Java 8, and Jenkins.
     Type: AWS::EC2::Instance
@@ -187,35 +147,26 @@ Resources:
                 enabled: true
                 ensureRunning: true
 
-    # Properties of the Instance that we are launching. Here we define things like EBS volumes, SG's, The AMI used, etc..
     Properties:
-      # Create the 25GB EBS volume that we will use for /var/lib/jenkins
       BlockDeviceMappings:
         - DeviceName: /dev/sdb
           Ebs:
             DeleteOnTermination: false
             VolumeType: gp2
             VolumeSize: 25
-      # Pull the Image or AMI from the RegionMap Map we defined earlier
-      ImageId: !FindInMap
-        - RegionMap
-        - !Ref 'AWS::Region'
-        - AMI
-      # Pull the Intance Type, Subnet, KeyName, etc from the Parameters we defined earlier
-      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      InstanceType: 't2.micro'
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
           DeleteOnTermination: true
           SubnetId: !Ref SubnetId
-          # This defines the SG that we will place on the ENI, We will create the SG after the instance resource definition
           GroupSet:
             - !Ref ServerSecurityGroup
-      KeyName: !Ref KeyName
+      KeyName: !Ref JenkinsKeyPair
       Tags:
         - Key: Name
           Value: !Ref InstanceTagName
-      # Use the user data to instantiate the cfn service, which will report back to CloudFormaton once the instance is set up
       UserData:
         Fn::Base64: !Sub |     # No more Fn::Join needed
           #!/bin/bash -x
@@ -223,13 +174,11 @@ Resources:
           amazon-linux-extras install java-openjdk11 -y
           /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource JenkinsInstance --region ${AWS::Region}
           /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource JenkinsInstance
-    # Creation Policy will ensure that if the instance isn't complete within the specified window, that a rollback will occur
     CreationPolicy:
       ResourceSignal:
         Count: '1'
         Timeout: PT15M
 
-  # Define the Security Group that will be appended to the ENI of the Instance we are creating.
   ServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -245,7 +194,6 @@ Resources:
           ToPort: !Ref JenkinsPort
           CidrIp: !Ref SSHLocation
 
-# Specify any outputs for the stack.
 Outputs:
   TemplateID:
     Description: 'Jenkins Single Server Template'
