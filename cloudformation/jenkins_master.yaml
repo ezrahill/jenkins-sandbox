@@ -29,7 +29,7 @@ Parameters:
     Default: Jenkins
   LatestAmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-default-x86_64'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
 Resources:
   JenkinsKeyPair:
@@ -38,14 +38,11 @@ Resources:
       KeyName: Jenkins
 
   JenkinsInstance:
-    Description: Jenkins Standalone EC2 Instance running Java 8, and Jenkins.
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
-        # configSets is used when there are multiple configs that you want to run, for multiple instances. If not needed then just config (default) is adequate.
         configSets:
           default: [mountVolume, config, jenkinsConfig]
-        # This configSet will define how we handle the additional EBS volume that we create with the Instance. We will mount the volume in /var/lib/Jenkins
         mountVolume:
           commands:
             01_mkdir:
@@ -62,22 +59,19 @@ Resources:
               command: echo -e "LABEL=JENKINS     /var/lib/jenkins    ext4   defaults 0 0" | sudo tee -a /etc/fstab
             07_mount:
               command: sudo mount -a
-
-        # This configSet will perform the actual installation of Jenkins
         jenkinsConfig:
           packages:
             yum:
               wget: []
-              #java-1.8.0-openjdk: []
-              #java-1.8.0-openjdk-devel: []
+              #java-11-openjdk: []
               net-tools: []
               git: []
               jq: []
           commands:
             01_jenkins_repo:
-              command: sudo wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+              command: sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
             02_jenkins_key:
-              command: sudo rpm --import https://jenkins-ci.org/redhat/jenkins.io.key
+              command: sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
             03_jenkins_dirs:
               command: sudo mkdir -p /home/jenkins /var/lib/jenkins/.ssh /var/cache/jenkins/war /var/log/jenkins
             04_jenkins_install:
@@ -93,10 +87,7 @@ Resources:
               command: sudo ssh-keygen -t rsa -b 2048 -C jenkins@jenkins -N "" -f /var/lib/jenkins/.ssh/id_rsa; sudo cat /var/lib/jenkins/.ssh/id_rsa.pub > /var/lib/jenkins/.ssh/authorized_keys
             09_set_permissions:
               command: sudo chown -R jenkins:jenkins /home/jenkins /var/lib/jenkins /var/cache/jenkins /var/log/jenkins; sudo chmod -R 0600 /var/lib/jenkins/.ssh/; sudo chmod 0700 /var/lib/jenkins/.ssh
-            10_firewall:
-              command: !Sub |
-                sudo firewall-cmd --permanent --add-service=ssh; sudo firewall-cmd --permanent --add-port='${JenkinsPort}'/tcp; sudo firewall-cmd --reload
-            11_jenkins_secrets:
+            10_jenkins_secrets:
               command: !Sub |
                 JenkinsPWD="/var/lib/jenkins/secrets/initialAdminPassword"
                 PrvKey="/var/lib/jenkins/.ssh/id_rsa"
@@ -109,15 +100,7 @@ Resources:
               jenkins:
                 enabled: true
                 ensureRunning: true
-
-        # Default Config, which handles installing the firewall, and CFN components to talk back to CloudFormation
         config:
-          packages:
-            yum:
-              firewalld: []
-          #commands:
-            #01_update:
-              #command: yum -y update
           files:
             '/etc/cfn/cfn-hup.conf':
               content: !Sub |
@@ -143,9 +126,6 @@ Resources:
                 files:
                   - '/etc/cfn/cfn-hup.conf'
                   - '/etc/cfn/hooks.d/cfn-auto-reloader.conf'
-              firewalld:
-                enabled: true
-                ensureRunning: true
 
     Properties:
       BlockDeviceMappings:
@@ -177,7 +157,7 @@ Resources:
     CreationPolicy:
       ResourceSignal:
         Count: '1'
-        Timeout: PT15M
+        Timeout: PT45M
 
   ServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
