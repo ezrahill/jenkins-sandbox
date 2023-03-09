@@ -1,12 +1,15 @@
 antisamy-markup-formatter:latest
-authorize-project:latest
+blueocean:latest
 build-timeout:latest
 cloudbees-folder:latest
 configuration-as-code:latest
 configuration-as-code-secret-ssm:latest
+credentials:latest
 credentials-binding:latest
 email-ext:latest
 git:latest
+github:latest
+github-api:latest
 github-branch-source:latest
 jenkins-cloudformation-plugin:latest
 mailer:latest

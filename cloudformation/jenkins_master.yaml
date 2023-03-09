@@ -28,13 +28,13 @@ Parameters:
     Type: String
     Default: Jenkins
   LatestAmiId:
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
 Resources:
   JenkinsKeyPair:
     Type: AWS::EC2::KeyPair
-    Properties: 
+    Properties:
       KeyName: Jenkins
 
   JenkinsInstance:
@@ -87,8 +87,10 @@ Resources:
               command: sudo ssh-keygen -t rsa -b 2048 -C jenkins@jenkins -N "" -f /var/lib/jenkins/.ssh/id_rsa; sudo cat /var/lib/jenkins/.ssh/id_rsa.pub > /var/lib/jenkins/.ssh/authorized_keys
             09_set_permissions:
               command: sudo chown -R jenkins:jenkins /home/jenkins /var/lib/jenkins /var/cache/jenkins /var/log/jenkins; sudo chmod -R 0600 /var/lib/jenkins/.ssh/; sudo chmod 0700 /var/lib/jenkins/.ssh
-            10_jenkins_secrets:
-              command: !Sub |
+            10_start_services:
+              command: sudo systemctl daemon-reload && sudo systemctl start jenkins.service
+            11_jenkins_secrets:
+              command: |
                 JenkinsPWD="/var/lib/jenkins/secrets/initialAdminPassword"
                 PrvKey="/var/lib/jenkins/.ssh/id_rsa"
                 PubKey="/var/lib/jenkins/.ssh/id_rsa.pub"
@@ -102,16 +104,16 @@ Resources:
                 ensureRunning: true
         config:
           files:
-            '/etc/cfn/cfn-hup.conf':
+            "/etc/cfn/cfn-hup.conf":
               content: !Sub |
                 [main]
                 stack=${AWS::StackId}
                 region=${AWS::Region}
                 interval=1
-              mode: '000400'
+              mode: "000400"
               owner: root
               group: root
-            '/etc/cfn/hooks.d/cfn-auto-reloader.conf':
+            "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
               content: !Sub |
                 [cfn-auto-reloader-hook]
                 triggers=post.update
@@ -124,8 +126,8 @@ Resources:
                 enabled: true
                 ensureRunning: true
                 files:
-                  - '/etc/cfn/cfn-hup.conf'
-                  - '/etc/cfn/hooks.d/cfn-auto-reloader.conf'
+                  - "/etc/cfn/cfn-hup.conf"
+                  - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
 
     Properties:
       BlockDeviceMappings:
@@ -135,7 +137,7 @@ Resources:
             VolumeType: gp2
             VolumeSize: 25
       ImageId: !Ref LatestAmiId
-      InstanceType: 't2.micro'
+      InstanceType: "t2.micro"
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
@@ -148,7 +150,7 @@ Resources:
         - Key: Name
           Value: !Ref InstanceTagName
       UserData:
-        Fn::Base64: !Sub |     # No more Fn::Join needed
+        Fn::Base64: !Sub |
           #!/bin/bash -x
           yum update -y
           amazon-linux-extras install java-openjdk11 -y
@@ -156,8 +158,8 @@ Resources:
           /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource JenkinsInstance
     CreationPolicy:
       ResourceSignal:
-        Count: '1'
-        Timeout: PT45M
+        Count: "1"
+        Timeout: PT15M
 
   ServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -176,13 +178,13 @@ Resources:
 
 Outputs:
   TemplateID:
-    Description: 'Jenkins Single Server Template'
-    Value: 'Jenkins Single Server Template'
+    Description: "Jenkins Single Server Template"
+    Value: "Jenkins Single Server Template"
   PublicIp:
-    Description: 'The Public IP address of the EC2 Instance'
+    Description: "The Public IP address of the EC2 Instance"
     Value: !GetAtt JenkinsInstance.PublicIp
   ServerAddress:
-    Description: 'The public DNS address for this instance'
+    Description: "The public DNS address for this instance"
     Value: !GetAtt JenkinsInstance.PublicDnsName
   JenkinsPass:
     Description: Jenkins One Time Install Password
@@ -191,5 +193,5 @@ Outputs:
     Description: Jenkins SSH Public Key
     Value: !Sub "ssh ec2-user@${JenkinsInstance.PublicIp} sudo cat /var/lib/jenkins/.ssh/id_rsa.pub"
   InstanceID:
-    Description: 'The ID of the Jenkins instance that was launched'
+    Description: "The ID of the Jenkins instance that was launched"
     Value: !Ref JenkinsInstance
