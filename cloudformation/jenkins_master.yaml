@@ -30,12 +30,44 @@ Parameters:
   LatestAmiId:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+  KeyPairPublicKey:
+    Type: String
 
 Resources:
   JenkinsKeyPair:
     Type: AWS::EC2::KeyPair
     Properties:
       KeyName: Jenkins
+      PublicKeyMaterial: !Ref KeyPairPublicKey
+
+  JenkinsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: Jenkins-Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ssm:Get*"
+                  - "ssm:Put*"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/jenkins*"
+
+  JenkinsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref JenkinsRole
 
   JenkinsInstance:
     Type: AWS::EC2::Instance
@@ -48,13 +80,13 @@ Resources:
             01_mkdir:
               command: sudo mkdir -p /var/lib/jenkins
             02_fdisk:
-              command: echo -e "o\nn\np\n1\n\n\nw" | sudo fdisk /dev/sdb
+              command: echo -e "o\nn\np\n1\n\n\nw" | sudo fdisk /dev/xvdb
             03_wait:
               command: sleep 3
             04_mkfs:
-              command: sudo mkfs.ext4 /dev/sdb1
+              command: sudo mkfs.ext4 /dev/xvdb1
             05_disk_label:
-              command: sudo e2label /dev/sdb1 JENKINS
+              command: sudo e2label /dev/xvdb1 JENKINS
             06_fstab:
               command: echo -e "LABEL=JENKINS     /var/lib/jenkins    ext4   defaults 0 0" | sudo tee -a /etc/fstab
             07_mount:
@@ -63,10 +95,23 @@ Resources:
           packages:
             yum:
               wget: []
-              #java-11-openjdk: []
               net-tools: []
               git: []
               jq: []
+          files:
+            "/var/lib/jenkins/param-store.sh":
+              content: !Sub |
+                #! /bin/bash
+                AWS_REGION=`curl -s http://169.254.169.254/latest/meta-data/placement/region`
+                JenkinsPWD="/var/lib/jenkins/secrets/initialAdminPassword"
+                PrvKey="/var/lib/jenkins/.ssh/id_rsa"
+                PubKey="/var/lib/jenkins/.ssh/id_rsa.pub"
+                aws ssm put-parameter --region $AWS_REGION --name /jenkins/initialAdminPassword --value file://$JenkinsPWD --type SecureString --overwrite
+                aws ssm put-parameter --region $AWS_REGION --name /jenkins/SSH-Git-PrivateKey --value file://$PrvKey --type SecureString --overwrite
+                aws ssm put-parameter --region $AWS_REGION --name /jenkins/SSH-Git-PublicKey --value file://$PubKey --type SecureString --overwrite
+              mode: "000700"
+              owner: "root"
+              group: "root"
           commands:
             01_jenkins_repo:
               command: sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
@@ -90,13 +135,7 @@ Resources:
             10_start_services:
               command: sudo systemctl daemon-reload && sudo systemctl start jenkins.service
             11_jenkins_secrets:
-              command: |
-                JenkinsPWD="/var/lib/jenkins/secrets/initialAdminPassword"
-                PrvKey="/var/lib/jenkins/.ssh/id_rsa"
-                PubKey="/var/lib/jenkins/.ssh/id_rsa.pub"
-                sudo aws ssm put-parameter --region us-east-1 --name /jenkins/initialAdminPassword --value file://$JenkinsPWD --type String --overwrite
-                sudo aws ssm put-parameter --region us-east-1 --name /jenkins/SSH-Git-PrivateKey --value file://$PrvKey --type String --overwrite
-                sudo aws ssm put-parameter --region us-east-1 --name /jenkins/SSH-Git-PublicKey --value file://$PubKey --type String --overwrite
+              command: sudo /var/lib/jenkins/param-store.sh
           services:
             sysvinit:
               jenkins:
@@ -131,11 +170,12 @@ Resources:
 
     Properties:
       BlockDeviceMappings:
-        - DeviceName: /dev/sdb
+        - DeviceName: /dev/xvdb
           Ebs:
             DeleteOnTermination: false
-            VolumeType: gp2
+            VolumeType: gp3
             VolumeSize: 25
+      IamInstanceProfile: !Ref JenkinsInstanceProfile
       ImageId: !Ref LatestAmiId
       InstanceType: "t2.micro"
       NetworkInterfaces:
@@ -177,9 +217,6 @@ Resources:
           CidrIp: !Ref SSHLocation
 
 Outputs:
-  TemplateID:
-    Description: "Jenkins Single Server Template"
-    Value: "Jenkins Single Server Template"
   PublicIp:
     Description: "The Public IP address of the EC2 Instance"
     Value: !GetAtt JenkinsInstance.PublicIp
@@ -192,6 +229,3 @@ Outputs:
   JenkinsKey:
     Description: Jenkins SSH Public Key
     Value: !Sub "ssh ec2-user@${JenkinsInstance.PublicIp} sudo cat /var/lib/jenkins/.ssh/id_rsa.pub"
-  InstanceID:
-    Description: "The ID of the Jenkins instance that was launched"
-    Value: !Ref JenkinsInstance
